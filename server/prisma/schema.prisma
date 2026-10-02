@@ -1,0 +1,498 @@
+// ====================================================
+// ForgeEval — Prisma Schema
+// Complete database model for AI-Powered Hackathon Evaluation
+// ====================================================
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ── Enums ────────────────────────────────────────────
+
+enum UserRole {
+  ADMIN
+  ORGANIZER
+  JUDGE
+  PARTICIPANT
+}
+
+enum HackathonStatus {
+  DRAFT
+  ACTIVE
+  EVALUATING
+  CONCLUDED
+  ARCHIVED
+}
+
+enum ProblemDifficulty {
+  CRITICAL
+  HARD
+  MEDIUM
+  EASY
+}
+
+enum ProblemStatus {
+  ACTIVE
+  EVALUATING
+  CONCLUDED
+}
+
+enum SubmissionStatus {
+  PENDING
+  IN_REVIEW
+  ANALYZING
+  ANALYZED
+  FAILED
+}
+
+enum RequirementCategory {
+  FUNCTIONAL
+  SECURITY
+  PERFORMANCE
+  UI_UX
+  DOCUMENTATION
+  TESTING
+  TECHNICAL
+}
+
+enum RequirementResultStatus {
+  SATISFIED
+  PARTIAL
+  MISSING
+}
+
+enum FindingSeverity {
+  CRITICAL
+  HIGH
+  MEDIUM
+  LOW
+  INFO
+}
+
+enum FindingStatus {
+  OPEN
+  VERIFIED
+  MITIGATED
+  DISMISSED
+}
+
+enum FindingCategory {
+  SECURITY
+  ARCHITECTURE
+  CODE_QUALITY
+  TESTING
+  PERFORMANCE
+}
+
+enum AnalysisStatus {
+  PENDING
+  RUNNING
+  COMPLETED
+  FAILED
+  NOT_CONFIGURED
+}
+
+enum EvalDimension {
+  FUNCTIONAL
+  TECHNICAL
+  SECURITY
+  PERFORMANCE
+  UI_UX
+  DOCUMENTATION
+  CODE_QUALITY
+}
+
+enum RuntimeTestStatus {
+  PENDING
+  RUNNING
+  PASSED
+  FAILED
+  SKIPPED
+  NOT_CONFIGURED
+}
+
+enum AuditStatus {
+  SECURE
+  OUTDATED
+  VULNERABLE
+}
+
+enum BuildStatus {
+  SUCCESS
+  WARNING
+  FAILED
+}
+
+// ── Models ───────────────────────────────────────────
+
+model User {
+  id           String   @id @default(cuid())
+  name         String
+  email        String   @unique
+  passwordHash String
+  role         UserRole @default(PARTICIPANT)
+  avatar       String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  teamMembers  TeamMember[]
+  judgeAssignments Judge[]
+  judgeScores  JudgeScore[]
+  activityLogs ActivityLog[]
+
+  @@index([email])
+  @@index([role])
+}
+
+model Hackathon {
+  id          String          @id @default(cuid())
+  name        String
+  description String?
+  startDate   DateTime
+  endDate     DateTime
+  status      HackathonStatus @default(DRAFT)
+  createdAt   DateTime        @default(now())
+  updatedAt   DateTime        @updatedAt
+
+  teams       Team[]
+  judges      Judge[]
+  problems    HackathonProblem[]
+
+  @@index([status])
+}
+
+model HackathonProblem {
+  id          String    @id @default(cuid())
+  hackathonId String
+  problemId   String
+
+  hackathon   Hackathon @relation(fields: [hackathonId], references: [id], onDelete: Cascade)
+  problem     Problem   @relation(fields: [problemId], references: [id], onDelete: Cascade)
+
+  @@unique([hackathonId, problemId])
+}
+
+model Problem {
+  id                      String            @id @default(cuid())
+  code                    String            @unique
+  title                   String
+  description             String
+  difficulty              ProblemDifficulty
+  category                String
+  status                  ProblemStatus     @default(ACTIVE)
+  deadline                DateTime?
+  inputRequirements       String[]
+  outputRequirements      String[]
+  functionalRequirements  String[]
+  technicalRequirements   String[]
+  securityRequirements    String[]
+  performanceRequirements String[]
+  uiUxRequirements        String[]
+  docRequirements         String[]
+  createdBy               String?
+  createdAt               DateTime          @default(now())
+  updatedAt               DateTime          @updatedAt
+
+  submissions     Submission[]
+  requirements    Requirement[]
+  hackathons      HackathonProblem[]
+
+  @@index([category])
+  @@index([difficulty])
+  @@index([status])
+}
+
+model Team {
+  id          String   @id @default(cuid())
+  name        String
+  hackathonId String
+  avatar      String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  hackathon   Hackathon    @relation(fields: [hackathonId], references: [id], onDelete: Cascade)
+  members     TeamMember[]
+  submissions Submission[]
+
+  @@index([hackathonId])
+}
+
+model TeamMember {
+  id     String @id @default(cuid())
+  teamId String
+  userId String
+  role   String @default("MEMBER")
+
+  team   Team @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  user   User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([teamId, userId])
+}
+
+model Submission {
+  id              String           @id @default(cuid())
+  teamId          String
+  problemId       String
+  repositoryUrl   String
+  branch          String           @default("main")
+  commitHash      String?
+  language        String?
+  framework       String?
+  status          SubmissionStatus @default(PENDING)
+  overallScore    Float?
+  readmeContent   String?
+  submittedAt     DateTime         @default(now())
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+
+  // Code metrics
+  linesOfCode          Int?
+  cyclomaticComplexity Float?
+  testCoverage         Float?
+  buildTimeSec         Float?
+  vulnerabilitiesCount Int?
+  exitCode             Int?
+  buildStatus          BuildStatus?
+  executionTime        String?
+
+  // Criteria scores (denormalized for quick access)
+  scoreRequirement    Float?
+  scoreCodeQuality    Float?
+  scoreSecurity       Float?
+  scoreTesting        Float?
+  scoreDocumentation  Float?
+  scoreUiUx           Float?
+
+  team               Team               @relation(fields: [teamId], references: [id], onDelete: Cascade)
+  problem            Problem            @relation(fields: [problemId], references: [id], onDelete: Cascade)
+  files              SubmissionFile[]
+  requirementResults RequirementResult[]
+  aiAnalyses         AIAnalysis[]
+  securityFindings   SecurityFinding[]
+  runtimeTests       RuntimeTest[]
+  judgeScores        JudgeScore[]
+  finalResult        FinalResult?
+  frameworks         SubmissionFramework[]
+  dependencies       SubmissionDependency[]
+  projectStructure   Json?
+  runtimeLogs        Json?
+
+  @@index([teamId])
+  @@index([problemId])
+  @@index([status])
+  @@index([submittedAt])
+}
+
+model SubmissionFile {
+  id           String @id @default(cuid())
+  submissionId String
+  path         String
+  filename     String
+  extension    String?
+  size         Int?
+  language     String?
+  contentHash  String?
+
+  submission Submission @relation(fields: [submissionId], references: [id], onDelete: Cascade)
+
+  @@index([submissionId])
+}
+
+model SubmissionFramework {
+  id           String @id @default(cuid())
+  submissionId String
+  name         String
+
+  submission Submission @relation(fields: [submissionId], references: [id], onDelete: Cascade)
+
+  @@index([submissionId])
+}
+
+model SubmissionDependency {
+  id           String      @id @default(cuid())
+  submissionId String
+  name         String
+  version      String
+  auditStatus  AuditStatus @default(SECURE)
+
+  submission Submission @relation(fields: [submissionId], references: [id], onDelete: Cascade)
+
+  @@index([submissionId])
+}
+
+model Requirement {
+  id          String              @id @default(cuid())
+  problemId   String
+  code        String
+  title       String
+  description String?
+  category    RequirementCategory
+  weight      Float               @default(1.0)
+  createdAt   DateTime            @default(now())
+
+  problem Problem             @relation(fields: [problemId], references: [id], onDelete: Cascade)
+  results RequirementResult[]
+
+  @@index([problemId])
+}
+
+model RequirementResult {
+  id            String                  @id @default(cuid())
+  submissionId  String
+  requirementId String
+  status        RequirementResultStatus
+  confidence    Float
+  evidence      String?
+  filePath      String?
+  lineStart     Int?
+  lineEnd       Int?
+  explanation   String?
+
+  submission  Submission  @relation(fields: [submissionId], references: [id], onDelete: Cascade)
+  requirement Requirement @relation(fields: [requirementId], references: [id], onDelete: Cascade)
+
+  @@unique([submissionId, requirementId])
+  @@index([submissionId])
+}
+
+model AIAnalysis {
+  id           String         @id @default(cuid())
+  submissionId String
+  status       AnalysisStatus @default(PENDING)
+  summary      String?
+  overallScore Float?
+  startedAt    DateTime?
+  completedAt  DateTime?
+  model        String?
+  tokensUsed   Int?
+  createdAt    DateTime       @default(now())
+
+  submission      Submission         @relation(fields: [submissionId], references: [id], onDelete: Cascade)
+  dimensionScores AIDimensionScore[]
+
+  @@index([submissionId])
+  @@index([status])
+}
+
+model AIDimensionScore {
+  id          String        @id @default(cuid())
+  analysisId  String
+  dimension   EvalDimension
+  score       Float
+  weight      Float         @default(1.0)
+  explanation String?
+  evidence    Json?
+
+  analysis AIAnalysis @relation(fields: [analysisId], references: [id], onDelete: Cascade)
+
+  @@index([analysisId])
+}
+
+model SecurityFinding {
+  id             String          @id @default(cuid())
+  submissionId   String
+  severity       FindingSeverity
+  category       FindingCategory @default(SECURITY)
+  title          String
+  description    String
+  filePath       String?
+  lineNumber     Int?
+  evidence       String?
+  recommendation String?
+  cwe            String?
+  status         FindingStatus   @default(OPEN)
+  teamName       String?
+  problemTitle   String?
+  createdAt      DateTime        @default(now())
+
+  submission Submission @relation(fields: [submissionId], references: [id], onDelete: Cascade)
+
+  @@index([submissionId])
+  @@index([severity])
+  @@index([status])
+}
+
+model RuntimeTest {
+  id             String            @id @default(cuid())
+  submissionId   String
+  name           String
+  description    String?
+  status         RuntimeTestStatus @default(PENDING)
+  duration       Float?
+  stdout         String?
+  stderr         String?
+  expectedOutput String?
+  actualOutput   String?
+  createdAt      DateTime          @default(now())
+
+  submission Submission @relation(fields: [submissionId], references: [id], onDelete: Cascade)
+
+  @@index([submissionId])
+}
+
+model Judge {
+  id          String @id @default(cuid())
+  userId      String
+  hackathonId String
+
+  user      User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  hackathon Hackathon   @relation(fields: [hackathonId], references: [id], onDelete: Cascade)
+  scores    JudgeScore[]
+
+  @@unique([userId, hackathonId])
+}
+
+model JudgeScore {
+  id           String        @id @default(cuid())
+  judgeId      String?
+  userId       String
+  submissionId String
+  dimension    EvalDimension
+  score        Float
+  comment      String?
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+
+  judge      Judge?     @relation(fields: [judgeId], references: [id], onDelete: SetNull)
+  user       User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  submission Submission @relation(fields: [submissionId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, submissionId, dimension])
+  @@index([submissionId])
+  @@index([userId])
+}
+
+model FinalResult {
+  id           String   @id @default(cuid())
+  submissionId String   @unique
+  aiScore      Float?
+  judgeScore   Float?
+  finalScore   Float?
+  rank         Int?
+  generatedAt  DateTime @default(now())
+
+  submission Submission @relation(fields: [submissionId], references: [id], onDelete: Cascade)
+
+  @@index([finalScore])
+}
+
+model ActivityLog {
+  id        String   @id @default(cuid())
+  userId    String?
+  action    String
+  entity    String?
+  entityId  String?
+  metadata  Json?
+  createdAt DateTime @default(now())
+
+  user User? @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([userId])
+  @@index([createdAt])
+  @@index([entity])
+}

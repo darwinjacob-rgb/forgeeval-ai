@@ -1,0 +1,10 @@
+{
+  "description": "AI-powered platform for comprehensive hackathon submission evaluation offering multi-dimensional analysis and evidence-based judging to streamline decision-making.",
+  "robots": {
+    "index": false
+  },
+  "accessibility": {
+    "addBypassLinks": false,
+    "ignoreReducedMotion": false
+  }
+}
