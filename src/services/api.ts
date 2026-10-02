@@ -20,7 +20,7 @@ async function apiFetch<T>(endpoint: string, options: RequestInit = {}): Promise
   const data = await response.json();
 
   if (!response.ok || !data.success) {
-    throw new Error(data.message || 'API request failed');
+    throw new Error(data.message || data.error?.message || 'API request failed');
   }
 
   return data.data;
@@ -31,58 +31,149 @@ async function apiFetch<T>(endpoint: string, options: RequestInit = {}): Promise
 // ====================================================
 export const authApi = {
   login: async (email: string, passwordHash: string) => {
-    try {
-      return await apiFetch<{ user: any }>('/auth/login', {
-        method: 'POST',
-        body: JSON.stringify({ email, password: passwordHash }),
-      });
-    } catch (err) {
-      console.warn('Backend unavailable, using simulated login fallback:', err);
-      return {
-        user: {
-          id: 'user-simulated',
-          name: email.split('@')[0] || 'Forge Developer',
-          email,
-          role: 'ADMIN',
-        },
-      };
-    }
+    return apiFetch<{ user: any }>('/auth/login', {
+      method: 'POST',
+      body: JSON.stringify({ email, password: passwordHash }),
+    });
   },
 
-  register: async (name: string, email: string, passwordHash: string, role = 'PARTICIPANT') => {
-    try {
-      return await apiFetch<{ user: any }>('/auth/register', {
-        method: 'POST',
-        body: JSON.stringify({ name, email, password: passwordHash, role }),
-      });
-    } catch (err) {
-      console.warn('Backend unavailable, using simulated register fallback:', err);
-      return {
-        user: { id: 'user-simulated', name, email, role },
-      };
-    }
+  register: async (name: string, email: string, passwordHash: string, role = 'PARTICIPANT', phone?: string) => {
+    return apiFetch<{ user: any }>('/auth/register', {
+      method: 'POST',
+      body: JSON.stringify({ name, email, password: passwordHash, role, phone }),
+    });
   },
 
   logout: async () => {
-    try {
-      return await apiFetch('/auth/logout', { method: 'POST' });
-    } catch (err) {
-      console.warn('Logout fallback:', err);
-      return { success: true };
-    }
+    return apiFetch('/auth/logout', { method: 'POST' });
   },
 
   getMe: async () => {
-    try {
-      return await apiFetch<{ user: any }>('/auth/me');
-    } catch (err) {
-      return null;
-    }
+    return apiFetch<{ user: any }>('/auth/me');
   },
 };
 
 // ====================================================
-// PROBLEMS API
+// HACKATHONS API
+// ====================================================
+export const hackathonsApi = {
+  getAll: async () => {
+    return apiFetch<{ hackathons: any[] }>('/hackathons');
+  },
+
+  getById: async (id: string) => {
+    return apiFetch<{ hackathon: any }>(`/hackathons/${id}`);
+  },
+
+  join: async (id: string) => {
+    return apiFetch<{ message: string; hackathonId: string }>(`/hackathons/${id}/join`, {
+      method: 'POST',
+    });
+  },
+
+  getProblems: async (id: string) => {
+    return apiFetch<{ problems: any[] }>(`/hackathons/${id}/problems`);
+  },
+};
+
+// ====================================================
+// TEAMS API
+// ====================================================
+export const teamsApi = {
+  create: async (data: { name: string; hackathonId: string }) => {
+    return apiFetch<{ team: any }>('/teams', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  },
+
+  joinByCode: async (inviteCode: string) => {
+    return apiFetch<{ teamId: string; member: any }>('/teams/join', {
+      method: 'POST',
+      body: JSON.stringify({ inviteCode }),
+    });
+  },
+
+  getById: async (id: string) => {
+    return apiFetch<{ team: any }>(`/teams/${id}`);
+  },
+
+  leave: async (id: string) => {
+    return apiFetch<any>(`/teams/${id}/leave`, {
+      method: 'POST',
+    });
+  },
+
+  getMyTeams: async () => {
+    return apiFetch<{ teams: any[] }>('/teams/my-teams');
+  },
+};
+
+// ====================================================
+// PARTICIPANT PORTAL API
+// ====================================================
+export const participantApi = {
+  getDashboard: async () => {
+    return apiFetch<{
+      summary: {
+        activeStatus: string;
+        joinedHackathonsCount: number;
+        teamsCount: number;
+        activeSubmission: any;
+      };
+      hackathons: any[];
+      teams: any[];
+      recentActivities: any[];
+    }>('/participant/dashboard');
+  },
+
+  createSubmission: async (data: {
+    hackathonId?: string;
+    problemId: string;
+    teamId: string;
+    projectName: string;
+    projectDescription?: string;
+    repositoryUrl: string;
+    branch?: string;
+    demoUrl?: string;
+    docUrl?: string;
+  }) => {
+    return apiFetch<{ submission: any }>('/participant/submissions', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  },
+
+  getSubmissions: async () => {
+    return apiFetch<{ submissions: any[] }>('/participant/submissions');
+  },
+
+  getSubmissionById: async (id: string) => {
+    return apiFetch<{ submission: any }>(`/participant/submissions/${id}`);
+  },
+
+  getResults: async () => {
+    return apiFetch<{
+      hasReleasedResults: boolean;
+      message: string;
+      results: any[];
+    }>('/participant/results');
+  },
+
+  getProfile: async () => {
+    return apiFetch<{ user: any }>('/participant/profile');
+  },
+
+  updateProfile: async (data: { name?: string; phone?: string; avatar?: string }) => {
+    return apiFetch<{ user: any }>('/participant/profile', {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    });
+  },
+};
+
+// ====================================================
+// PROBLEMS API (V1 & ADMIN)
 // ====================================================
 export const problemsApi = {
   getAll: async (params?: { category?: string; difficulty?: string; search?: string }): Promise<Problem[]> => {
@@ -91,7 +182,7 @@ export const problemsApi = {
       const res = await apiFetch<{ problems: any[] }>(`/problems?${query}`);
       return res.problems.map((p) => ({
         id: p.id,
-        code: p.id.slice(0, 8).toUpperCase(),
+        code: p.code || p.id.slice(0, 8).toUpperCase(),
         title: p.title,
         category: p.category || 'AI & Agents',
         difficulty: p.difficulty || 'HARD',
@@ -102,12 +193,12 @@ export const problemsApi = {
         deadline: '24h 00m left',
         inputRequirements: [],
         outputRequirements: [],
-        functionalRequirements: [],
-        technicalRequirements: [],
-        securityRequirements: [],
-        performanceRequirements: [],
-        uiUxRequirements: [],
-        docRequirements: [],
+        functionalRequirements: p.functionalRequirements || [],
+        technicalRequirements: p.technicalRequirements || [],
+        securityRequirements: p.securityRequirements || [],
+        performanceRequirements: p.performanceRequirements || [],
+        uiUxRequirements: p.uiUxRequirements || [],
+        docRequirements: p.docRequirements || [],
       }));
     } catch (err) {
       console.warn('Backend unavailable, using INITIAL_PROBLEMS fallback:', err);
@@ -121,7 +212,7 @@ export const problemsApi = {
       const p = res.problem;
       return {
         id: p.id,
-        code: p.id.slice(0, 8).toUpperCase(),
+        code: p.code || p.id.slice(0, 8).toUpperCase(),
         title: p.title,
         category: p.category || 'AI & Agents',
         difficulty: p.difficulty || 'HARD',
@@ -132,12 +223,12 @@ export const problemsApi = {
         deadline: '24h 00m left',
         inputRequirements: [],
         outputRequirements: [],
-        functionalRequirements: [],
-        technicalRequirements: [],
-        securityRequirements: [],
-        performanceRequirements: [],
-        uiUxRequirements: [],
-        docRequirements: [],
+        functionalRequirements: p.functionalRequirements || [],
+        technicalRequirements: p.technicalRequirements || [],
+        securityRequirements: p.securityRequirements || [],
+        performanceRequirements: p.performanceRequirements || [],
+        uiUxRequirements: p.uiUxRequirements || [],
+        docRequirements: p.docRequirements || [],
       };
     } catch (err) {
       return INITIAL_PROBLEMS.find((p) => p.id === id) || null;
@@ -153,7 +244,7 @@ export const problemsApi = {
 };
 
 // ====================================================
-// SUBMISSIONS API
+// SUBMISSIONS API (V1 & ADMIN)
 // ====================================================
 export const submissionsApi = {
   getAll: async (params?: { problemId?: string; status?: string; search?: string }): Promise<Submission[]> => {
@@ -162,35 +253,35 @@ export const submissionsApi = {
       const res = await apiFetch<{ submissions: any[] }>(`/submissions?${query}`);
       return res.submissions.map((s) => ({
         id: s.id,
-        team: s.teamName || 'CyberPulse',
+        team: s.projectName ? `${s.projectName} (${s.team?.name || 'CyberPulse'})` : s.team?.name || 'CyberPulse',
         avatar: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150',
         problemId: s.problemId,
         problemTitle: s.problem?.title || 'Real-Time Pipeline',
         repository: s.repositoryUrl || 'https://github.com/forgeeval/aegisshield',
-        branch: 'main',
-        language: 'TypeScript / Rust',
+        branch: s.branch || 'main',
+        language: s.language || 'TypeScript / Rust',
         submittedAt: new Date(s.createdAt).toISOString(),
         commitHash: s.id.slice(0, 7),
-        status: s.status === 'EVALUATED' ? 'ANALYZED' : 'IN_REVIEW',
-        overallScore: s.scoreOverall || 90,
+        status: s.status === 'ANALYZED' ? 'ANALYZED' : 'IN_REVIEW',
+        overallScore: s.overallScore || 90,
         criteriaScores: {
-          requirement: s.scoreRequirements || 90,
+          requirement: s.scoreRequirement || 90,
           codeQuality: s.scoreCodeQuality || 88,
           security: s.scoreSecurity || 92,
-          testing: s.scoreRuntime || 90,
-          documentation: 85,
-          uiUx: 88,
+          testing: s.scoreTesting || 90,
+          documentation: s.scoreDocumentation || 85,
+          uiUx: s.scoreUiUx || 88,
         },
         metrics: {
-          linesOfCode: 4520,
-          cyclomaticComplexity: 12,
-          testCoverage: 88,
-          buildTimeSec: 14,
-          vulnerabilitiesCount: s._count?.findings || 1,
+          linesOfCode: s.linesOfCode || 4520,
+          cyclomaticComplexity: s.cyclomaticComplexity || 12,
+          testCoverage: s.testCoverage || 88,
+          buildTimeSec: s.buildTimeSec || 14,
+          vulnerabilitiesCount: s._count?.securityFindings || 1,
         },
         frameworks: ['React', 'Express', 'Prisma', 'TailwindCSS'],
         dependencies: [],
-        readmePreview: s.description,
+        readmePreview: s.projectDescription || s.problem?.description || '',
         projectStructure: [],
         runtimeLogs: [],
         exitCode: 0,
@@ -242,8 +333,8 @@ export const evaluationApi = {
         problemTitle: 'Fraud Engine',
         title: f.title,
         description: f.description,
-        evidence: f.location || 'src/server.ts',
-        affectedFile: f.location || 'src/server.ts',
+        evidence: f.filePath || 'src/server.ts',
+        affectedFile: f.filePath || 'src/server.ts',
         recommendation: f.recommendation,
         status: f.status === 'OPEN' ? 'OPEN' : 'MITIGATED',
       }));

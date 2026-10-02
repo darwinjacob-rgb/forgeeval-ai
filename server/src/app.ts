@@ -1,3 +1,4 @@
+import "express-async-errors";
 import express from "express";
 import cors from "cors";
 import cookieParser from "cookie-parser";
@@ -11,7 +12,12 @@ const app = express();
 // Middleware configuration
 app.use(
   cors({
-    origin: [config.frontendUrl, "http://localhost:5173", "http://localhost:3000"],
+    origin: [
+      config.frontendUrl,
+      "http://localhost:8443",
+      "http://localhost:5173",
+      "http://localhost:3000",
+    ],
     credentials: true,
   })
 );

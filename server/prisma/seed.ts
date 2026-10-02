@@ -4,7 +4,7 @@ import bcrypt from "bcrypt";
 const prisma = new PrismaClient();
 
 async function main() {
-  console.log("🌱 Starting ForgeEval database seeding...");
+  console.log("🌱 Starting ForgeEval V2 database seeding...");
 
   // Clean existing tables
   await prisma.judgeScore.deleteMany();
@@ -14,6 +14,8 @@ async function main() {
   await prisma.submission.deleteMany();
   await prisma.teamMember.deleteMany();
   await prisma.team.deleteMany();
+  await prisma.hackathonProblem.deleteMany();
+  await prisma.hackathonParticipant.deleteMany();
   await prisma.problem.deleteMany();
   await prisma.hackathon.deleteMany();
   await prisma.user.deleteMany();
@@ -31,6 +33,16 @@ async function main() {
     },
   });
 
+  const organizer = await prisma.user.create({
+    data: {
+      email: "organizer@forgeeval.com",
+      passwordHash,
+      name: "Morgan Stone",
+      role: "ORGANIZER",
+      avatar: "https://images.unsplash.com/photo-1519085360753-af0119f7cbe7?w=150",
+    },
+  });
+
   const judge = await prisma.user.create({
     data: {
       email: "judge@forgeeval.com",
@@ -41,46 +53,56 @@ async function main() {
     },
   });
 
-  const dev = await prisma.user.create({
+  const participant1 = await prisma.user.create({
     data: {
       email: "dev@forgeeval.com",
       passwordHash,
-      name: "CyberPulse Team",
+      name: "Elena Rostova",
       role: "PARTICIPANT",
+      phone: "+1-555-0192",
       avatar: "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150",
     },
   });
 
-  console.log(" Created seed users");
-
-  // 2. Create Hackathon & Team
-  const hackathon = await prisma.hackathon.create({
+  const participant2 = await prisma.user.create({
     data: {
-      name: "ForgeEval AI Hackathon 2026",
-      description: "Premier AI and Distributed Systems Hackathon",
-      startDate: new Date(),
-      endDate: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000),
+      email: "participant2@forgeeval.com",
+      passwordHash,
+      name: "Marcus Chen",
+      role: "PARTICIPANT",
+      phone: "+1-555-0144",
+      avatar: "https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=150",
+    },
+  });
+
+  console.log(" Created seed users (1 Admin, 1 Organizer, 1 Judge, 2 Participants)");
+
+  // 2. Create Hackathons
+  const now = new Date();
+  const hackathon1 = await prisma.hackathon.create({
+    data: {
+      name: "Global AI Agents & Infrastructure Summit 2026",
+      theme: "Autonomous Agents & High-Throughput Distributed Compute",
+      description: "Build state-of-the-art verifiable intelligence architectures and low-latency streaming inference pipelines.",
+      rules: "Submissions must be original work with an active GitHub repository, automated tests, and clear README.",
+      eligibility: "Open to developers and engineering teams worldwide.",
+      startDate: new Date(now.getTime() - 2 * 24 * 60 * 60 * 1000),
+      endDate: new Date(now.getTime() + 14 * 24 * 60 * 60 * 1000),
+      registrationDeadline: new Date(now.getTime() + 5 * 24 * 60 * 60 * 1000),
+      submissionDeadline: new Date(now.getTime() + 10 * 24 * 60 * 60 * 1000),
       status: "ACTIVE",
     },
   });
 
-  const team = await prisma.team.create({
-    data: {
-      name: "CyberPulse",
-      hackathonId: hackathon.id,
-      avatar: "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150",
-    },
+  // Join participants to hackathon
+  await prisma.hackathonParticipant.createMany({
+    data: [
+      { hackathonId: hackathon1.id, userId: participant1.id },
+      { hackathonId: hackathon1.id, userId: participant2.id },
+    ],
   });
 
-  await prisma.teamMember.create({
-    data: {
-      teamId: team.id,
-      userId: dev.id,
-      role: "LEAD",
-    },
-  });
-
-  // 3. Create Problem Statements
+  // 3. Create Problems
   const problem1 = await prisma.problem.create({
     data: {
       code: "PROB-01",
@@ -90,9 +112,12 @@ async function main() {
       category: "FinTech",
       difficulty: "HARD",
       status: "ACTIVE",
-      functionalRequirements: ["Sub-50ms transaction latency", "Kafka stream ingest"],
-      securityRequirements: ["Zero-trust payload encryption"],
-      performanceRequirements: ["5000 TPS load capacity"],
+      functionalRequirements: ["Sub-50ms transaction latency", "Kafka stream ingest", "Dynamic scoring engine"],
+      technicalRequirements: ["TypeScript / Rust / Python core", "Automated unit and integration test coverage > 80%"],
+      securityRequirements: ["Zero-trust payload encryption", "Strict CORS and secret management"],
+      performanceRequirements: ["5,000 TPS sustained throughput under benchmark load"],
+      uiUxRequirements: ["Responsive status monitoring dashboard with micro-second latency display"],
+      docRequirements: ["Comprehensive architecture README, API specs, and deployment guide"],
     },
   });
 
@@ -105,18 +130,69 @@ async function main() {
       category: "Web3 Infrastructure",
       difficulty: "HARD",
       status: "ACTIVE",
+      functionalRequirements: ["ZK-proof verification for rubric items", "Gas-optimized smart contract"],
+      securityRequirements: ["Formal verification report", "Anti-sybil identity binding"],
     },
   });
 
-  console.log(" Created problem statements");
+  // Link problems to hackathon
+  await prisma.hackathonProblem.createMany({
+    data: [
+      { hackathonId: hackathon1.id, problemId: problem1.id },
+      { hackathonId: hackathon1.id, problemId: problem2.id },
+    ],
+  });
 
-  // 4. Create Submissions
+  console.log(" Created hackathon and linked problem statements");
+
+  // 4. Create Teams with Invite Codes
+  const team1 = await prisma.team.create({
+    data: {
+      name: "CyberPulse",
+      inviteCode: "FORGE-7X92",
+      hackathonId: hackathon1.id,
+      avatar: "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150",
+    },
+  });
+
+  await prisma.teamMember.create({
+    data: {
+      teamId: team1.id,
+      userId: participant1.id,
+      role: "CAPTAIN",
+    },
+  });
+
+  const team2 = await prisma.team.create({
+    data: {
+      name: "NeuralSquad",
+      inviteCode: "FORGE-8K31",
+      hackathonId: hackathon1.id,
+      avatar: "https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=150",
+    },
+  });
+
+  await prisma.teamMember.create({
+    data: {
+      teamId: team2.id,
+      userId: participant2.id,
+      role: "CAPTAIN",
+    },
+  });
+
+  console.log(" Created teams with invite codes (FORGE-7X92, FORGE-8K31)");
+
+  // 5. Create Submissions
   const sub1 = await prisma.submission.create({
     data: {
-      teamId: team.id,
+      teamId: team1.id,
       problemId: problem1.id,
+      projectName: "AegisShield",
+      projectDescription: "High-throughput real-time zero-trust anomaly detection with Rust and eBPF instrumentation.",
       repositoryUrl: "https://github.com/forgeeval/aegisshield-core",
       branch: "main",
+      demoUrl: "https://aegisshield.demo.forgeeval.dev",
+      docUrl: "https://docs.aegisshield.dev",
       language: "TypeScript / Rust",
       status: "ANALYZED",
       overallScore: 94,
@@ -124,12 +200,35 @@ async function main() {
       scoreSecurity: 91,
       scoreTesting: 95,
       scoreRequirement: 96,
+      scoreDocumentation: 90,
+      scoreUiUx: 94,
+      isReleased: true, // Released for participant view testing
     },
   });
 
-  console.log(" Created submissions");
+  const sub2 = await prisma.submission.create({
+    data: {
+      teamId: team2.id,
+      problemId: problem1.id,
+      projectName: "SentinAI",
+      projectDescription: "Distributed streaming anomaly scanner with secure enclave execution.",
+      repositoryUrl: "https://github.com/forgeeval/sentin-ai",
+      branch: "main",
+      demoUrl: "https://sentinai.demo.forgeeval.dev",
+      language: "Python / Go",
+      status: "ANALYZED",
+      overallScore: 88,
+      scoreCodeQuality: 87,
+      scoreSecurity: 84,
+      scoreTesting: 91,
+      scoreRequirement: 90,
+      scoreDocumentation: 85,
+      scoreUiUx: 88,
+      isReleased: false, // Unreleased to test unreleased state
+    },
+  });
 
-  // 5. Create Security Findings
+  // 6. Security Findings
   await prisma.securityFinding.create({
     data: {
       submissionId: sub1.id,
@@ -144,7 +243,7 @@ async function main() {
     },
   });
 
-  // 6. Create Runtime Test Results
+  // 7. Runtime Tests
   await prisma.runtimeTest.create({
     data: {
       submissionId: sub1.id,
@@ -155,7 +254,7 @@ async function main() {
     },
   });
 
-  // 7. Create Judge Score
+  // 8. Judge Score
   await prisma.judgeScore.create({
     data: {
       submissionId: sub1.id,
@@ -166,7 +265,7 @@ async function main() {
     },
   });
 
-  console.log(" Database seeding completed successfully!");
+  console.log(" Database V2 seeding completed successfully!");
 }
 
 main()

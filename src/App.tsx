@@ -18,16 +18,35 @@ import { ResultsView } from './components/ResultsView';
 import { LeaderboardView } from './components/LeaderboardView';
 import { SettingsView, ProfileView } from './components/SettingsView';
 
+// Participant Portal Views
+import { ParticipantShell } from './components/participant/ParticipantShell';
+import { ParticipantDashboard } from './components/participant/ParticipantDashboard';
+import { ParticipantHackathons } from './components/participant/ParticipantHackathons';
+import { ParticipantHackathonDetail } from './components/participant/ParticipantHackathonDetail';
+import { ParticipantProblemDetail } from './components/participant/ParticipantProblemDetail';
+import { ParticipantTeamView } from './components/participant/ParticipantTeamView';
+import { ParticipantSubmissionView } from './components/participant/ParticipantSubmissionView';
+import { ParticipantSubmissionDetail } from './components/participant/ParticipantSubmissionDetail';
+import { ParticipantResultsView } from './components/participant/ParticipantResultsView';
+import { ParticipantProfileView } from './components/participant/ParticipantProfileView';
+
 import { INITIAL_PROBLEMS, INITIAL_SUBMISSIONS, INITIAL_REQUIREMENTS, INITIAL_FINDINGS } from './mockData';
 import { Problem, Submission, Finding, RequirementItem, JudgeEvaluation } from './types';
-import { problemsApi, submissionsApi, evaluationApi, judgeApi } from './services/api';
+import { problemsApi, submissionsApi, authApi } from './services/api';
 
 export default function App() {
   // Navigation State
   const [currentView, setCurrentView] = useState<string>('landing');
+  const [navParams, setNavParams] = useState<any>({});
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(true);
+  const [currentUser, setCurrentUser] = useState<any>({
+    name: 'Elena Rostova',
+    email: 'dev@forgeeval.com',
+    role: 'PARTICIPANT',
+    avatar: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=150',
+  });
 
-  // Core Data States
+  // Core Data States (Admin / V1)
   const [problems, setProblems] = useState<Problem[]>(INITIAL_PROBLEMS);
   const [submissions, setSubmissions] = useState<Submission[]>(INITIAL_SUBMISSIONS);
   const [requirements, setRequirements] = useState<RequirementItem[]>(INITIAL_REQUIREMENTS);
@@ -37,14 +56,21 @@ export default function App() {
   const [selectedSubId, setSelectedSubId] = useState<string>('sub-101');
   const [selectedProbId, setSelectedProbId] = useState<string>('prob-01');
 
-  // Load backend data on mount
+  // Load backend data and check auth session on mount
   useEffect(() => {
     async function loadBackendData() {
       try {
-        const [fetchedProblems, fetchedSubmissions] = await Promise.all([
-          problemsApi.getAll(),
-          submissionsApi.getAll(),
+        const [meRes, fetchedProblems, fetchedSubmissions] = await Promise.all([
+          authApi.getMe().catch(() => null),
+          problemsApi.getAll().catch(() => INITIAL_PROBLEMS),
+          submissionsApi.getAll().catch(() => INITIAL_SUBMISSIONS),
         ]);
+
+        if (meRes && meRes.user) {
+          setCurrentUser(meRes.user);
+          setIsAuthenticated(true);
+        }
+
         if (fetchedProblems && fetchedProblems.length > 0) {
           setProblems(fetchedProblems);
         }
@@ -58,8 +84,14 @@ export default function App() {
     loadBackendData();
   }, []);
 
-  const activeSubmission = submissions.find(s => s.id === selectedSubId) || submissions[0];
-  const activeProblem = problems.find(p => p.id === (activeSubmission?.problemId || selectedProbId)) || problems[0];
+  const activeSubmission = submissions.find((s) => s.id === selectedSubId) || submissions[0];
+  const activeProblem = problems.find((p) => p.id === (activeSubmission?.problemId || selectedProbId)) || problems[0];
+
+  // Navigation Helper
+  const handleNavigate = (view: string, params: any = {}) => {
+    setNavParams(params);
+    setCurrentView(view);
+  };
 
   // Actions
   const handleSelectSubmission = (id: string) => {
@@ -67,28 +99,30 @@ export default function App() {
   };
 
   const handleCreateProblem = (newProb: Problem) => {
-    setProblems(prev => [newProb, ...prev]);
+    setProblems((prev) => [newProb, ...prev]);
     setCurrentView('problems');
   };
 
   const handleSaveEvaluation = (evaluation: JudgeEvaluation) => {
-    setSubmissions(prev => prev.map(s => {
-      if (s.id === evaluation.submissionId) {
-        return {
-          ...s,
-          criteriaScores: {
-            requirement: evaluation.scores.requirementCompliance,
-            codeQuality: evaluation.scores.codeQuality,
-            security: evaluation.scores.security,
-            testing: evaluation.scores.testing,
-            documentation: evaluation.scores.documentation,
-            uiUx: evaluation.scores.uiUx
-          },
-          status: 'ANALYZED'
-        };
-      }
-      return s;
-    }));
+    setSubmissions((prev) =>
+      prev.map((s) => {
+        if (s.id === evaluation.submissionId) {
+          return {
+            ...s,
+            criteriaScores: {
+              requirement: evaluation.scores.requirementCompliance,
+              codeQuality: evaluation.scores.codeQuality,
+              security: evaluation.scores.security,
+              testing: evaluation.scores.testing,
+              documentation: evaluation.scores.documentation,
+              uiUx: evaluation.scores.uiUx,
+            },
+            status: 'ANALYZED',
+          };
+        }
+        return s;
+      })
+    );
   };
 
   const handleTriggerAnalyze = (probId: string) => {
@@ -96,53 +130,114 @@ export default function App() {
     setCurrentView('analysis');
   };
 
-  // View Routing Logic
+  // 1. Landing Page
   if (currentView === 'landing') {
     return (
       <LandingPage
-        onNavigate={(view) => setCurrentView(view)}
+        onNavigate={(view) => handleNavigate(view)}
         onOpenAnalysis={(subId) => {
           if (subId) setSelectedSubId(subId);
-          setCurrentView('analysis');
+          handleNavigate('analysis');
         }}
       />
     );
   }
 
-  if (currentView === 'login') {
+  // 2. Authentication
+  if (currentView === 'login' || currentView === 'register') {
     return (
       <AuthScreen
-        mode="login"
-        onNavigate={(view) => setCurrentView(view)}
-        onSuccess={() => {
+        mode={currentView}
+        onNavigate={(view) => handleNavigate(view)}
+        onSuccess={(user) => {
           setIsAuthenticated(true);
-          setCurrentView('dashboard');
+          if (user) setCurrentUser(user);
+          if (user?.role === 'PARTICIPANT') {
+            handleNavigate('participant-dashboard');
+          } else {
+            handleNavigate('dashboard');
+          }
         }}
       />
     );
   }
 
-  if (currentView === 'register') {
+  // 3. Participant Portal Views
+  if (currentView.startsWith('participant-')) {
     return (
-      <AuthScreen
-        mode="register"
-        onNavigate={(view) => setCurrentView(view)}
-        onSuccess={() => {
-          setIsAuthenticated(true);
-          setCurrentView('dashboard');
+      <ParticipantShell
+        currentView={currentView}
+        onNavigate={handleNavigate}
+        onLogout={() => {
+          authApi.logout().catch(() => {});
+          setIsAuthenticated(false);
+          handleNavigate('landing');
         }}
-      />
+        currentUser={currentUser}
+      >
+        {currentView === 'participant-dashboard' && (
+          <ParticipantDashboard onNavigate={handleNavigate} currentUser={currentUser} />
+        )}
+
+        {currentView === 'participant-hackathons' && (
+          <ParticipantHackathons onNavigate={handleNavigate} />
+        )}
+
+        {currentView === 'participant-hackathon-detail' && (
+          <ParticipantHackathonDetail
+            hackathonId={navParams?.id}
+            onNavigate={handleNavigate}
+          />
+        )}
+
+        {currentView === 'participant-problem-detail' && (
+          <ParticipantProblemDetail
+            problemId={navParams?.id}
+            hackathonId={navParams?.hackathonId}
+            onNavigate={handleNavigate}
+          />
+        )}
+
+        {currentView === 'participant-team' && (
+          <ParticipantTeamView onNavigate={handleNavigate} />
+        )}
+
+        {currentView === 'participant-submission' && (
+          <ParticipantSubmissionView
+            initialProblemId={navParams?.problemId}
+            initialHackathonId={navParams?.hackathonId}
+            initialTeamId={navParams?.teamId}
+            onNavigate={handleNavigate}
+          />
+        )}
+
+        {currentView === 'participant-submission-detail' && (
+          <ParticipantSubmissionDetail
+            submissionId={navParams?.id}
+            onNavigate={handleNavigate}
+          />
+        )}
+
+        {currentView === 'participant-results' && (
+          <ParticipantResultsView onNavigate={handleNavigate} />
+        )}
+
+        {currentView === 'participant-profile' && (
+          <ParticipantProfileView onNavigate={handleNavigate} />
+        )}
+      </ParticipantShell>
     );
   }
 
-  // Admin & App Views inside AppShell
+  // 4. Admin & Judge Views (AppShell) - V1 PRESERVED 100%
   return (
     <AppShell
       currentView={currentView}
-      onNavigate={(view) => setCurrentView(view)}
+      onNavigate={(view) => handleNavigate(view)}
       onLogout={() => {
+        authApi.logout().catch(() => {});
         setIsAuthenticated(false);
-        setCurrentView('landing');
+        handleNavigate('landing');
       }}
       activeSubmissionName={activeSubmission.team}
     >
@@ -152,7 +247,7 @@ export default function App() {
           submissions={submissions}
           findings={findings}
           onSelectSubmission={handleSelectSubmission}
-          onNavigate={(view) => setCurrentView(view)}
+          onNavigate={(view) => handleNavigate(view)}
         />
       )}
 
@@ -160,14 +255,14 @@ export default function App() {
         <ProblemsView
           problems={problems}
           onSelectProblem={(prob) => setSelectedProbId(prob.id)}
-          onNavigate={(view) => setCurrentView(view)}
+          onNavigate={(view) => handleNavigate(view)}
           onTriggerAnalyze={handleTriggerAnalyze}
         />
       )}
 
       {currentView === 'create-problem' && (
         <CreateProblemView
-          onCancel={() => setCurrentView('problems')}
+          onCancel={() => handleNavigate('problems')}
           onCreate={handleCreateProblem}
         />
       )}
@@ -177,8 +272,8 @@ export default function App() {
           submissions={submissions}
           problems={problems}
           onSelectSubmission={handleSelectSubmission}
-          onNavigate={(view) => setCurrentView(view)}
-          onRunBatchAnalysis={() => setCurrentView('analysis')}
+          onNavigate={(view) => handleNavigate(view)}
+          onRunBatchAnalysis={() => handleNavigate('analysis')}
         />
       )}
 
@@ -186,10 +281,10 @@ export default function App() {
         <SubmissionDetail
           submission={activeSubmission}
           problem={activeProblem}
-          onNavigate={(view) => setCurrentView(view)}
+          onNavigate={(view) => handleNavigate(view)}
           onRunAnalysis={(id) => {
             setSelectedSubId(id);
-            setCurrentView('analysis');
+            handleNavigate('analysis');
           }}
         />
       )}
@@ -199,7 +294,7 @@ export default function App() {
           submission={activeSubmission}
           requirements={requirements}
           findings={findings}
-          onNavigate={(view) => setCurrentView(view)}
+          onNavigate={(view) => handleNavigate(view)}
         />
       )}
 
@@ -207,14 +302,14 @@ export default function App() {
         <RequirementMappingView
           requirements={requirements}
           submission={activeSubmission}
-          onNavigate={(view) => setCurrentView(view)}
+          onNavigate={(view) => handleNavigate(view)}
         />
       )}
 
       {currentView === 'code-intel' && (
         <CodeIntelligenceView
           submission={activeSubmission}
-          onNavigate={(view) => setCurrentView(view)}
+          onNavigate={(view) => handleNavigate(view)}
         />
       )}
 
@@ -222,14 +317,14 @@ export default function App() {
         <SecurityAnalysisView
           findings={findings}
           submission={activeSubmission}
-          onNavigate={(view) => setCurrentView(view)}
+          onNavigate={(view) => handleNavigate(view)}
         />
       )}
 
       {currentView === 'runtime' && (
         <RuntimeTestingView
           submission={activeSubmission}
-          onNavigate={(view) => setCurrentView(view)}
+          onNavigate={(view) => handleNavigate(view)}
         />
       )}
 
@@ -239,7 +334,7 @@ export default function App() {
           submissions={submissions}
           problems={problems}
           onSelectSubmission={handleSelectSubmission}
-          onNavigate={(view) => setCurrentView(view)}
+          onNavigate={(view) => handleNavigate(view)}
         />
       )}
 
@@ -248,7 +343,7 @@ export default function App() {
           submission={activeSubmission}
           requirements={requirements}
           onSaveEvaluation={handleSaveEvaluation}
-          onNavigate={(view) => setCurrentView(view)}
+          onNavigate={(view) => handleNavigate(view)}
         />
       )}
 
@@ -257,7 +352,7 @@ export default function App() {
           submissions={submissions}
           problems={problems}
           onSelectSubmission={handleSelectSubmission}
-          onNavigate={(view) => setCurrentView(view)}
+          onNavigate={(view) => handleNavigate(view)}
         />
       )}
 
@@ -266,16 +361,16 @@ export default function App() {
           submissions={submissions}
           problems={problems}
           onSelectSubmission={handleSelectSubmission}
-          onNavigate={(view) => setCurrentView(view)}
+          onNavigate={(view) => handleNavigate(view)}
         />
       )}
 
       {currentView === 'settings' && (
-        <SettingsView onNavigate={(view) => setCurrentView(view)} />
+        <SettingsView onNavigate={(view) => handleNavigate(view)} />
       )}
 
       {currentView === 'profile' && (
-        <ProfileView onNavigate={(view) => setCurrentView(view)} />
+        <ProfileView onNavigate={(view) => handleNavigate(view)} />
       )}
     </AppShell>
   );

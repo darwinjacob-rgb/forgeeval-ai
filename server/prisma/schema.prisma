@@ -137,33 +137,55 @@ model User {
   passwordHash String
   role         UserRole @default(PARTICIPANT)
   avatar       String?
+  phone        String?
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
-  teamMembers  TeamMember[]
+  teamMembers      TeamMember[]
   judgeAssignments Judge[]
-  judgeScores  JudgeScore[]
-  activityLogs ActivityLog[]
+  judgeScores      JudgeScore[]
+  activityLogs     ActivityLog[]
+  hackathonsJoined HackathonParticipant[]
 
   @@index([email])
   @@index([role])
 }
 
 model Hackathon {
-  id          String          @id @default(cuid())
-  name        String
-  description String?
-  startDate   DateTime
-  endDate     DateTime
-  status      HackathonStatus @default(DRAFT)
-  createdAt   DateTime        @default(now())
-  updatedAt   DateTime        @updatedAt
+  id                   String          @id @default(cuid())
+  name                 String
+  description          String?
+  theme                String?
+  rules                String?
+  eligibility          String?
+  startDate            DateTime
+  endDate              DateTime
+  registrationDeadline DateTime?
+  submissionDeadline   DateTime?
+  status               HackathonStatus @default(DRAFT)
+  createdAt            DateTime        @default(now())
+  updatedAt            DateTime        @updatedAt
 
-  teams       Team[]
-  judges      Judge[]
-  problems    HackathonProblem[]
+  teams        Team[]
+  judges       Judge[]
+  problems     HackathonProblem[]
+  participants HackathonParticipant[]
 
   @@index([status])
+}
+
+model HackathonParticipant {
+  id          String   @id @default(cuid())
+  hackathonId String
+  userId      String
+  registeredAt DateTime @default(now())
+
+  hackathon Hackathon @relation(fields: [hackathonId], references: [id], onDelete: Cascade)
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([hackathonId, userId])
+  @@index([hackathonId])
+  @@index([userId])
 }
 
 model HackathonProblem {
@@ -210,6 +232,7 @@ model Problem {
 model Team {
   id          String   @id @default(cuid())
   name        String
+  inviteCode  String?  @unique
   hackathonId String
   avatar      String?
   createdAt   DateTime @default(now())
@@ -220,6 +243,7 @@ model Team {
   submissions Submission[]
 
   @@index([hackathonId])
+  @@index([inviteCode])
 }
 
 model TeamMember {
@@ -235,20 +259,25 @@ model TeamMember {
 }
 
 model Submission {
-  id              String           @id @default(cuid())
-  teamId          String
-  problemId       String
-  repositoryUrl   String
-  branch          String           @default("main")
-  commitHash      String?
-  language        String?
-  framework       String?
-  status          SubmissionStatus @default(PENDING)
-  overallScore    Float?
-  readmeContent   String?
-  submittedAt     DateTime         @default(now())
-  createdAt       DateTime         @default(now())
-  updatedAt       DateTime         @updatedAt
+  id                 String           @id @default(cuid())
+  teamId             String
+  problemId          String
+  projectName        String?
+  projectDescription String?
+  repositoryUrl      String
+  branch             String           @default("main")
+  demoUrl            String?
+  docUrl             String?
+  commitHash         String?
+  language           String?
+  framework          String?
+  status             SubmissionStatus @default(PENDING)
+  overallScore       Float?
+  readmeContent      String?
+  isReleased         Boolean          @default(false)
+  submittedAt        DateTime         @default(now())
+  createdAt          DateTime         @default(now())
+  updatedAt          DateTime         @updatedAt
 
   // Code metrics
   linesOfCode          Int?
